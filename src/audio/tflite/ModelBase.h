@@ -22,6 +22,8 @@ limitations under the License.
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/model.h"
 #include "tensorflow/lite/optional_debug_tools.h"
+//#include "tensorflow/lite/delegates/utils/simple_delegate.h"
+//#include "tensorflow/lite/delegates/flex/delegate_symbol.cc"
 
 namespace ddsp
 {
@@ -30,8 +32,14 @@ template <typename Input, typename Output>
 class ModelBase
 {
 public:
-    ModelBase (const char* modelDataPtr, size_t dataSize, int numThreads)
+    ModelBase (const char* modelDataPtr, size_t dataSize, int numThreads) 
+        //: flex_delegate (TF_AcquireFlexDelegate())
     {
+        //if (!flex_delegate)
+        //{
+        //    std::cerr << "Unable to load FlexDelegate: " << std::endl;
+        //}
+
         modelBuffer = tflite::FlatBufferModel::VerifyAndBuildFromBuffer (modelDataPtr, dataSize);
         jassert (modelBuffer != nullptr);
 
@@ -43,11 +51,21 @@ public:
         jassert (status == kTfLiteOk);
         jassert (interpreter != nullptr);
 
+        //interpreter->ModifyGraphWithDelegate (flex_delegate.get());
+        jassert (interpreter != nullptr);
+
         status = interpreter->AllocateTensors();
         jassert (status == kTfLiteOk);
     }
 
-    virtual ~ModelBase() = default;
+    virtual ~ModelBase()
+    { 
+        modelBuffer.reset();
+
+        // order is important here!
+        interpreter.reset();
+        //flex_delegate.reset();
+    }
 
     // Describe the model's inputs and outputs.
     void describe()
@@ -93,6 +111,7 @@ public:
 protected:
     std::unique_ptr<tflite::FlatBufferModel> modelBuffer;
     std::unique_ptr<tflite::Interpreter> interpreter;
+    //tflite::TfLiteDelegateUniquePtr flex_delegate; // to allow SELECT_TF_OPS (subset of tf operations)
 };
 
 } // namespace ddsp

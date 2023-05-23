@@ -31,13 +31,29 @@ inline constexpr std::string_view kInputTensorName_F0 = "call_f0_scaled:0";
 inline constexpr std::string_view kInputTensorName_Loudness = "call_pw_scaled:0";
 inline constexpr std::string_view kInputTensorName_State = "call_state:0";
 
+inline constexpr std::string_view kInputTensorName_F0_MIDI_DDSP = "f0_hz";
+inline constexpr std::string_view kInputTensorName_Loudness_MIDI_DDSP = "loudness_db";
+inline constexpr std::string_view kInputTensorName_Midi_MIDI_DDSP = "midi";
+inline constexpr std::string_view kInputTensorName_Onsets_MIDI_DDSP = "onsets";
+inline constexpr std::string_view kInputTensorName_Offsets_MIDI_DDSP = "offsets";
+inline constexpr std::string_view kInputTensorName_InstrumentId_MIDI_DDSP = "instrument_id";
+inline constexpr std::string_view kInputTensorName_State_MIDI_DDSP = "state";
+
+
 inline constexpr std::string_view kOutputTensorName_Amplitude = "StatefulPartitionedCall:0";
 inline constexpr std::string_view kOutputTensorName_Harmonics = "StatefulPartitionedCall:1";
 inline constexpr std::string_view kOutputTensorName_NoiseAmps = "StatefulPartitionedCall:2";
 inline constexpr std::string_view kOutputTensorName_State = "StatefulPartitionedCall:3";
 
+inline constexpr std::string_view kOutputTensorName_Amplitude_MIDI_DDSP = "Identity";
+inline constexpr std::string_view kOutputTensorName_Harmonics_MIDI_DDSP = "Identity_1";
+inline constexpr std::string_view kOutputTensorName_NoiseAmps_MIDI_DDSP = "Identity_2";
+inline constexpr std::string_view kOutputTensorName_State_MIDI_DDSP = "state";
+
 constexpr int kNumPredictControlsInputTensors = 3;
+constexpr int kNumPredictControlsInputTensors_MIDI_DDSP = 8;
 constexpr int kNumPredictControlsOutputTensors = 4;
+constexpr int kNumPredictControlsOutputTensors_MIDI_DDSP = 4;
 constexpr int kNumFeatureExtractionThreads = 4;
 constexpr int kNumPredictControlsThreads = 1;
 constexpr int kNoiseAmpsSize = 65;

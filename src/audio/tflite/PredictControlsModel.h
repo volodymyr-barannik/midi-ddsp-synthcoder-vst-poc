@@ -22,6 +22,8 @@ limitations under the License.
 #include "audio/tflite/ModelLibrary.h"
 #include "audio/tflite/ModelTypes.h"
 
+#include <random>
+
 namespace ddsp
 {
 
@@ -46,9 +48,28 @@ public:
 
     static const Metadata getMetadata (const ModelInfo& mi);
 
-private:
+public:
+    
+    static std::string_view getF0InputName                          (const ModelInfo& modelInfo);
+    static std::string_view getLoudnessInputName                    (const ModelInfo& modelInfo);
+    static std::optional<std::string_view> getMidiInputName         (const ModelInfo& modelInfo);
+    static std::optional<std::string_view> getOnsetsInputName       (const ModelInfo& modelInfo);
+    static std::optional<std::string_view> getOffsetsInputName      (const ModelInfo& modelInfo);
+    static std::optional<std::string_view> getInstrumentIdInputName (const ModelInfo& modelInfo);
+    static std::string_view getStateInputName                       (const ModelInfo& modelInfo);
+    static std::string_view getAmplitudeOutputName                  (const ModelInfo& modelInfo);
+    static std::string_view getHarmonicsOutputName                  (const ModelInfo& modelInfo);
+    static std::string_view getNoiseAmpsOutputName                  (const ModelInfo& modelInfo);
+    static std::string_view getStateOutputName                      (const ModelInfo& modelInfo);
+
     // GRU model state.
     std::array<float, kGruModelStateSize> gruState;
+
+    ModelInfo modelInfo;
+
+
+    std::mt19937 gen;
+    std::uniform_real_distribution<float> dis;
 };
 
 } // namespace ddsp

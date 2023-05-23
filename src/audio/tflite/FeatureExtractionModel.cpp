@@ -24,6 +24,7 @@ FeatureExtractionModel::FeatureExtractionModel()
                  BinaryData::extract_features_micro_tfliteSize,
                  kNumFeatureExtractionThreads)
 {
+    describe();
 }
 
 void FeatureExtractionModel::call (const juce::AudioBuffer<float>& audioInput, AudioFeatures& output)

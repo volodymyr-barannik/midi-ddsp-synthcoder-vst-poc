@@ -15,6 +15,8 @@ limitations under the License.
 */
 
 #include "audio/tflite/ModelLibrary.h"
+
+#include "PredictControlsModel.h"
 #include "util/Constants.h"
 
 #include "tensorflow/lite/interpreter.h"
@@ -38,49 +40,60 @@ void ModelLibrary::loadEmbeddedModels()
 {
     models.emplace_back (ModelInfo ("Flute",
                                     loadModelTimestamp (BinaryData::Flute_tflite, BinaryData::Flute_tfliteSize),
+                                    ModelType::DDSP_v1,
                                     BinaryData::Flute_tflite,
                                     BinaryData::Flute_tfliteSize));
 
     models.emplace_back (ModelInfo ("Violin",
                                     loadModelTimestamp (BinaryData::Violin_tflite, BinaryData::Violin_tfliteSize),
+                                    ModelType::DDSP_v1,
                                     BinaryData::Violin_tflite,
                                     BinaryData::Violin_tfliteSize));
 
     models.emplace_back (ModelInfo ("Trumpet",
                                     loadModelTimestamp (BinaryData::Trumpet_tflite, BinaryData::Trumpet_tfliteSize),
+                                    ModelType::DDSP_v1,
                                     BinaryData::Trumpet_tflite,
                                     BinaryData::Trumpet_tfliteSize));
 
     models.emplace_back (ModelInfo ("Saxophone",
                                     loadModelTimestamp (BinaryData::Saxophone_tflite, BinaryData::Saxophone_tfliteSize),
+                                    ModelType::DDSP_v1,
                                     BinaryData::Saxophone_tflite,
                                     BinaryData::Saxophone_tfliteSize));
     models.emplace_back (ModelInfo ("Bassoon",
                                     loadModelTimestamp (BinaryData::Bassoon_tflite, BinaryData::Bassoon_tfliteSize),
+                                    ModelType::DDSP_v1,
                                     BinaryData::Bassoon_tflite,
                                     BinaryData::Bassoon_tfliteSize));
     models.emplace_back (ModelInfo ("Clarinet",
                                     loadModelTimestamp (BinaryData::Clarinet_tflite, BinaryData::Clarinet_tfliteSize),
+                                    ModelType::DDSP_v1,
                                     BinaryData::Clarinet_tflite,
                                     BinaryData::Clarinet_tfliteSize));
     models.emplace_back (ModelInfo ("Melodica",
                                     loadModelTimestamp (BinaryData::Melodica_tflite, BinaryData::Melodica_tfliteSize),
+                                    ModelType::DDSP_v1,
                                     BinaryData::Melodica_tflite,
                                     BinaryData::Melodica_tfliteSize));
     models.emplace_back (ModelInfo ("Sitar",
                                     loadModelTimestamp (BinaryData::Sitar_tflite, BinaryData::Sitar_tfliteSize),
+                                    ModelType::DDSP_v1,
                                     BinaryData::Sitar_tflite,
                                     BinaryData::Sitar_tfliteSize));
     models.emplace_back (ModelInfo ("Trombone",
                                     loadModelTimestamp (BinaryData::Trombone_tflite, BinaryData::Trombone_tfliteSize),
+                                    ModelType::DDSP_v1,
                                     BinaryData::Trombone_tflite,
                                     BinaryData::Trombone_tfliteSize));
     models.emplace_back (ModelInfo ("Tuba",
                                     loadModelTimestamp (BinaryData::Tuba_tflite, BinaryData::Tuba_tfliteSize),
+                                    ModelType::DDSP_v1,
                                     BinaryData::Tuba_tflite,
                                     BinaryData::Tuba_tfliteSize));
     models.emplace_back (ModelInfo ("Vowels",
                                     loadModelTimestamp (BinaryData::Vowels_tflite, BinaryData::Vowels_tfliteSize),
+                                    ModelType::DDSP_v1,
                                     BinaryData::Vowels_tflite,
                                     BinaryData::Vowels_tfliteSize));
 
@@ -110,6 +123,55 @@ juce::String ModelLibrary::getModelTimestamp (int modelIdx) { return models[mode
 
 juce::File ModelLibrary::getPathToUserModels() { return pathToUserModels; }
 
+std::unique_ptr<tflite::Interpreter> ModelLibrary::getInterpreterForModel(const ModelInfo& modelInfo) const
+{
+    juce::StringArray errorMsg;
+
+    std::unique_ptr<tflite::FlatBufferModel> modelBuffer;
+    std::unique_ptr<tflite::Interpreter> interpreter;
+    tflite::ops::builtin::BuiltinOpResolver resolver;
+
+    // Check if the model is able to load.
+    modelBuffer = tflite::FlatBufferModel::VerifyAndBuildFromBuffer (modelInfo.data.begin(), modelInfo.data.getSize());
+
+    if (modelBuffer == nullptr)
+    {
+        errorMsg.add ("Invalid .tflite file.\n");
+        showAlertWindow (modelInfo.name, errorMsg);
+        return nullptr;
+    }
+
+    // Continue setting up model.
+    tflite::InterpreterBuilder initBuilder (*modelBuffer, resolver);
+    initBuilder (&interpreter);
+    jassert (interpreter != nullptr);
+
+    interpreter->SetNumThreads (1);
+    jassert (interpreter->AllocateTensors() == kTfLiteOk);
+
+    return interpreter;
+}
+
+ModelType getModelType (const ModelInfo& modelInfo, const tflite::Interpreter& modelInterpreter)
+{
+    const size_t n_inputs = modelInterpreter.inputs().size();
+    const size_t n_outputs = modelInterpreter.outputs().size();
+    
+    if (n_inputs == kNumPredictControlsInputTensors
+        && n_outputs == kNumPredictControlsOutputTensors)
+    {
+        return ModelType::DDSP_v1;
+    }
+
+    if (n_inputs == kNumPredictControlsInputTensors_MIDI_DDSP
+        && n_outputs == kNumPredictControlsOutputTensors_MIDI_DDSP)
+    {
+        return ModelType::MIDI_DDSP;
+    }
+    
+    return ModelType::Unknown;
+}
+
 // We don't want a call to disk I/O from the plugin on every model load,
 // so we will load all models from disk into memory here.
 void ModelLibrary::searchPathForModels()
@@ -126,8 +188,13 @@ void ModelLibrary::searchPathForModels()
                                  loadModelTimestamp (m.loadFileAsString().toRawUTF8(), m.getSize()),
                                  m.loadFileAsString().toRawUTF8(),
                                  m.getSize());
+            
+            std::unique_ptr<tflite::Interpreter> interpreter = getInterpreterForModel (modelInfo);
 
-            if (validateModel (modelInfo))
+            modelInfo.modelType = getModelType (modelInfo, *interpreter);
+            DBG ("Model type: " << static_cast<int>(modelInfo.modelType) << "\n");
+
+            if (validateModel (modelInfo, *interpreter))
                 models.emplace_back (modelInfo);
         }
     }
@@ -167,41 +234,37 @@ juce::String ModelLibrary::loadModelTimestamp (const char* modelDataPtr, size_t 
     return "";
 }
 
-bool ModelLibrary::validateModel (ModelInfo modelInfo)
+bool ModelLibrary::validateModel (ModelInfo modelInfo, tflite::Interpreter& modelInterpreter) const
 {
     juce::StringArray errorMsg;
 
-    std::unique_ptr<tflite::FlatBufferModel> modelBuffer;
-    std::unique_ptr<tflite::Interpreter> interpreter;
-    tflite::ops::builtin::BuiltinOpResolver resolver;
-
-    // Check if the model is able to load.
-    modelBuffer = tflite::FlatBufferModel::VerifyAndBuildFromBuffer (modelInfo.data.begin(), modelInfo.data.getSize());
-
-    if (modelBuffer == nullptr)
+    int requiredNumOfInputs = -1;
+    int requiredNumOfOutputs = -1;
+    if (modelInfo.modelType == ModelType::DDSP_v1)
     {
-        errorMsg.add ("Invalid .tflite file.\n");
-        showAlertWindow (modelInfo.name, errorMsg);
+        requiredNumOfInputs = kNumPredictControlsInputTensors;
+        requiredNumOfOutputs = kNumPredictControlsOutputTensors;
+    }
+    else if (modelInfo.modelType == ModelType::MIDI_DDSP)
+    {
+        requiredNumOfInputs = kNumPredictControlsInputTensors_MIDI_DDSP;
+        requiredNumOfOutputs = kNumPredictControlsOutputTensors_MIDI_DDSP;
+    }
+    else if (modelInfo.modelType == ModelType::Unknown)
+    {
+        showAlertWindow (modelInfo.name, juce::StringArray(" is of Unknown model type."));
         return false;
     }
 
-    // Continue setting up model.
-    tflite::InterpreterBuilder initBuilder (*modelBuffer, resolver);
-    initBuilder (&interpreter);
-    jassert (interpreter != nullptr);
-
-    interpreter->SetNumThreads (1);
-    jassert (interpreter->AllocateTensors() == kTfLiteOk);
-
     // Check if model has correct number of I/O tensors.
-    if (interpreter->inputs().size() != kNumPredictControlsInputTensors)
+    if (modelInterpreter.inputs().size() != requiredNumOfInputs)
     {
-        errorMsg.add ("Invalid number of input tensors: " + std::to_string (interpreter->inputs().size()) + "\n");
+        errorMsg.add ("Invalid number of input tensors: " + std::to_string (modelInterpreter.inputs().size()) + "\n");
     }
 
-    if (interpreter->outputs().size() != kNumPredictControlsOutputTensors)
+    if (modelInterpreter.outputs().size() != requiredNumOfOutputs)
     {
-        errorMsg.add ("Invalid number of output tensors: " + std::to_string (interpreter->outputs().size()) + "\n");
+        errorMsg.add ("Invalid number of output tensors: " + std::to_string (modelInterpreter.outputs().size()) + "\n");
     }
 
     if (! errorMsg.isEmpty())
@@ -214,69 +277,94 @@ bool ModelLibrary::validateModel (ModelInfo modelInfo)
     // puts them in different orders so we will stay order-agnostic here.
     // We also do not want repeats.
     juce::StringArray inputNames;
-    inputNames.add (kInputTensorName_F0.data());
-    inputNames.add (kInputTensorName_Loudness.data());
-    inputNames.add (kInputTensorName_State.data());
+    inputNames.add (PredictControlsModel::getF0InputName(modelInfo).data());
+    inputNames.add (PredictControlsModel::getLoudnessInputName(modelInfo).data());
+    inputNames.add (PredictControlsModel::getStateInputName(modelInfo).data());
 
-    for (int i = 0; i < interpreter->inputs().size(); i++)
+    for (int i = 0; i < modelInterpreter.inputs().size(); i++)
     {
-        auto name = interpreter->GetInputName (i);
+        auto name = modelInterpreter.GetInputName (i);
+        
+        TfLiteIntArray* shape = modelInterpreter.input_tensor (i)->dims;
+        juce::String shape_str = "[";
+        for (int d = 0; d < shape->size; ++d)
+        {
+            shape_str += juce::String (shape->data[d]) + "; ";
+        }
+        shape_str += "]";
+
+        auto size = modelInterpreter.input_tensor (i)->bytes / sizeof (float);
+        DBG ("Model input: [ name = " << name << ", shape = " << shape_str << ", size = " << size << " ]");
+
         if (int idx = inputNames.indexOf (name); idx != -1)
         {
             inputNames.remove (idx);
         }
         else
         {
-            errorMsg.add ("Invalid input tensor name " + std::string (name) + "\n");
+            errorMsg.add ("Unknown input tensor name " + std::string (name) + "\n");
         }
     }
 
     juce::StringArray outputNames;
-    outputNames.add (kOutputTensorName_Amplitude.data());
-    outputNames.add (kOutputTensorName_Harmonics.data());
-    outputNames.add (kOutputTensorName_NoiseAmps.data());
-    outputNames.add (kOutputTensorName_State.data());
+    outputNames.add (PredictControlsModel::getAmplitudeOutputName(modelInfo).data());
+    outputNames.add (PredictControlsModel::getHarmonicsOutputName(modelInfo).data());
+    outputNames.add (PredictControlsModel::getNoiseAmpsOutputName(modelInfo).data());
+    outputNames.add (PredictControlsModel::getStateOutputName(modelInfo).data());
 
-    for (int i = 0; i < interpreter->outputs().size(); i++)
+    for (int i = 0; i < modelInterpreter.outputs().size(); i++)
     {
-        auto name = interpreter->GetOutputName (i);
+        auto name = modelInterpreter.GetOutputName (i);
+
+        TfLiteIntArray* shape = modelInterpreter.output_tensor (i)->dims;
+        juce::String shape_str = "[";
+        for (int d = 0; d < shape->size; ++d)
+        {
+            shape_str += juce::String (shape->data[d]) + "; ";
+        }
+        shape_str += "]";
+
+        auto size = modelInterpreter.output_tensor (i)->bytes / sizeof (float);
+        DBG ("Model output: [ name = " << name << ", shape = " << shape_str << ", size = " << size << " ]");
+
+
         if (int idx = outputNames.indexOf (name); idx != -1)
         {
             outputNames.remove (idx);
         }
         else
         {
-            errorMsg.add ("Invalid output tensor name " + std::string (name) + "\n");
+            errorMsg.add ("Unknown output tensor name " + std::string (name) + "\n");
         }
     }
 
-    if (! errorMsg.isEmpty())
+    if (!errorMsg.isEmpty())
     {
         showAlertWindow (modelInfo.name, errorMsg);
-        return false;
+        //return false;
     }
 
     // Check if tensors have correct sizes.
-    for (int i = 0; i < interpreter->inputs().size(); i++)
+    for (int i = 0; i < modelInterpreter.inputs().size(); i++)
     {
-        const std::string_view name = interpreter->GetInputName (i);
-        auto size = interpreter->input_tensor (i)->bytes / sizeof (float);
+        const std::string_view name = modelInterpreter.GetInputName (i);
+        auto size = modelInterpreter.input_tensor (i)->bytes / sizeof (float);
 
-        if (name == kInputTensorName_F0)
+        if (name == PredictControlsModel::getF0InputName(modelInfo))
         {
             if (size != kF0Size)
             {
                 errorMsg.add ("Invalid tensor size " + std::to_string (size) + " for " + name.data() + "\n");
             }
         }
-        else if (name == kInputTensorName_Loudness)
+        else if (name == PredictControlsModel::getLoudnessInputName(modelInfo))
         {
             if (size != kLoudnessSize)
             {
                 errorMsg.add ("Invalid tensor size " + std::to_string (size) + " for " + name.data() + "\n");
             }
         }
-        else if (name == kInputTensorName_State)
+        else if (name == PredictControlsModel::getStateInputName(modelInfo))
         {
             if (size != kGruModelStateSize)
             {
@@ -285,33 +373,33 @@ bool ModelLibrary::validateModel (ModelInfo modelInfo)
         }
     }
 
-    for (int i = 0; i < interpreter->outputs().size(); i++)
+    for (int i = 0; i < modelInterpreter.outputs().size(); i++)
     {
-        const std::string_view name = interpreter->GetOutputName (i);
-        auto size = interpreter->output_tensor (i)->bytes / sizeof (float);
+        const std::string_view name = modelInterpreter.GetOutputName (i);
+        size_t size = modelInterpreter.output_tensor (i)->bytes / sizeof (float);
 
-        if (name == kOutputTensorName_Amplitude)
+        if (name == PredictControlsModel::getAmplitudeOutputName(modelInfo))
         {
             if (size != kAmplitudeSize)
             {
                 errorMsg.add ("Invalid tensor size " + std::to_string (size) + " for " + name.data() + "\n");
             }
         }
-        else if (name == kOutputTensorName_Harmonics)
+        else if (name == PredictControlsModel::getHarmonicsOutputName(modelInfo))
         {
             if (size != kHarmonicsSize)
             {
                 errorMsg.add ("Invalid tensor size " + std::to_string (size) + " for " + name.data() + "\n");
             }
         }
-        else if (name == kOutputTensorName_NoiseAmps)
+        else if (name == PredictControlsModel::getNoiseAmpsOutputName(modelInfo))
         {
             if (size != kNoiseAmpsSize)
             {
                 errorMsg.add ("Invalid tensor size " + std::to_string (size) + " for " + name.data() + "\n");
             }
         }
-        else if (name == kOutputTensorName_State)
+        else if (name == PredictControlsModel::getStateOutputName(modelInfo))
         {
             if (size != kGruModelStateSize)
             {
@@ -323,8 +411,10 @@ bool ModelLibrary::validateModel (ModelInfo modelInfo)
     if (! errorMsg.isEmpty())
     {
         showAlertWindow (modelInfo.name, errorMsg);
-        return false;
+        //return false;
     }
+
+    DBG ("Model " << modelInfo.name << " is valid.");
 
     return true;
 }
@@ -337,7 +427,7 @@ void ModelLibrary::clearUserModels()
     }
 }
 
-void ModelLibrary::showAlertWindow (juce::String modelName, juce::StringArray messages)
+void ModelLibrary::showAlertWindow (juce::String modelName, juce::StringArray messages) const
 {
     juce::String message;
     for (int i = 0; i < messages.size(); i++)

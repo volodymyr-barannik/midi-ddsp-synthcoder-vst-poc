@@ -37,6 +37,9 @@ if(JUCE_DISABLE_ASSERTIONS)
     list(APPEND DDSP_JUCE_COMPILE_DEFS JUCE_DISABLE_ASSERTIONS=1)
 endif()
 
+list(APPEND DDSP_JUCE_COMPILE_DEFS JUCE_DEBUG=1)
+list(APPEND DDSP_JUCE_COMPILE_DEFS JUCE_DISABLE_ASSERTIONS=0)
+
 add_subdirectory(externals/JUCE "${CMAKE_CURRENT_BINARY_DIR}/juce-bin" EXCLUDE_FROM_ALL)
 
 # ------------------------------- TFLite ------------------------------ #
